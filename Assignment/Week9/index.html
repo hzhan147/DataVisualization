@@ -1,0 +1,848 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+
+<!-- Load d3.js -->
+<script src="https://d3js.org/d3.v5.min.js"></script>
+
+<style type="text/css">
+    h1 {
+        text-align: center;
+    }
+
+    body {
+        position: relative;
+    }
+
+    /* tooltip and popup dialog styling */
+    #tooltip,
+    #popUpDialog {
+        position: absolute;
+        width: auto;
+        height: auto;
+        padding: 10px;
+        background-color: #ede5d8;
+        border-radius: 10px;
+        font-size: 14px;
+        z-index: 1;
+    }
+
+    /* tooltip tail */
+    #popUpDialog::after {
+        content: " ";
+        position: absolute;
+        top: 100%;
+        left: 50%;
+        margin-left: -5px;
+        border-width: 15px;
+        border-style: solid;
+        border-color: #ede5d8 transparent transparent transparent;
+    }
+
+    /* hidden class */
+    #tooltip.hidden,
+    #popUpDialog.hidden,
+    #selectDiv.hidden,
+    #closeDiv.hidden {
+        display: none;
+    }
+</style>
+
+<body onload="init()">
+    <h1>COVID 19 Narrative Visualization</h1>
+    <h2 id="title"></h2>
+    <div id="popUpDialog" class="hidden">
+        <p id="message"></p>
+        <button type="button">Next >></button>
+    </div>
+    <div id="closeDiv" class="hidden">
+        <button type="button">X</button>
+    </div>
+    <div id="selectDiv" style="position: absolute; top: 200px;"><span>Type of Map: </span><select
+            id="selectButton"></select></div>
+    <div id="tooltip" class="hidden">
+        <p><strong>State: </strong><span id="state"></span></p>
+        <p><strong id="valueTitle"></strong><span id="value"></span></p>
+        <p id="deathNumP"><strong>Total Death Cases: </strong><span id="death"></span></p>
+        <p id="testNumP"><strong>Total Test Cases: </strong><span id="test"></span></p>
+        <p id="dateP"><strong>Date : </strong><span id="date"></span></p>
+    </div>
+</body>
+
+<script>
+    // enable all the event listeners on the svg elment.
+    function enableMapListeners(width, height, date, margin, totalConfirmedWithState, totalDeathsWithState, totalTestsWithState, json) {
+        var lineChartData = totalConfirmedWithState;
+        var titleText = "Confirm Case Heatmap";
+        var chartTitleText = "Confirm Case Line Chart";
+        var circleColor = "red";
+
+        // populate map territories events including tooltip and loading second page.
+        d3.select("svg")
+            .selectAll("path")
+            .on("mouseover", function (d) {
+
+                d3.select("#tooltip")
+                    .select("#state")
+                    .text(d.properties.name);
+
+                d3.select("#tooltip")
+                    .select("#valueTitle")
+                    .text("Total Confirmed Cases: ");
+
+                d3.select("#tooltip")
+                    .select("#dateP")
+                    .style("display", "none");
+
+                d3.select("#tooltip")
+                    .select("#value")
+                    .text(d.properties.value);
+
+                d3.select("#tooltip")
+                    .select("#death")
+                    .text(d.properties.deaths);
+
+                d3.select("#tooltip")
+                    .select("#test")
+                    .text(d.properties.tests);
+
+                d3.select("#tooltip")
+                    .classed("hidden", false);
+
+                d3.select("svg")
+                    .style("cursor", "pointer");
+
+            })
+            .on("mousemove", function (d) {
+
+                d3.select("#tooltip")
+                    .style("left", d3.event.pageX + "px")
+                    .style("top", d3.event.pageY + 20 + "px");
+
+            })
+            .on("mouseout", function (d) {
+
+                d3.select("#tooltip")
+                    .classed("hidden", true);
+
+                d3.select("svg")
+                    .style("cursor", "default");
+
+            })
+            .on("click", function (d) {
+                d3.select("svg")
+                    .transition()
+                    .duration(100)
+                    .on("end", function (d) {
+                        d3.select("#tooltip")
+                            .classed("hidden", true);
+                    })
+                    .transition()
+                    .duration(500)
+                    .style("opacity", 0)
+                    .remove()
+                    .on("end", function (d) {
+                        var selectedState = d3.select("#tooltip").select("#state").text();
+                        d3.select("#title")
+                            .text(selectedState +" "+ chartTitleText)
+
+                        
+                        loadSecondPage(width, height, date, lineChartData, margin, circleColor, chartTitleText, selectedState);
+                    });
+            });
+
+        // Add selection box and trigger for switching heat maps.
+        d3.select("#selectButton")
+            .on("change", function (d) {
+                var selectedOption = d3.select(this).property("value");
+                if (selectedOption == "Death Case Heatmap") {   //Switch to death case heatmap
+                    lineChartData = totalDeathsWithState;
+                    titleText = "Death Case Heatmap";
+                    chartTitleText = "Death Case Line Chart";
+                    circleColor = "orange";
+                    var logScale = d3.scaleLog()
+                        .domain([
+                            d3.min(json.features, d => d.properties.deaths),
+                            d3.max(json.features, d => d.properties.deaths)
+                        ]);
+
+                    var color = d3.scaleSequential(
+                        (d) => d3.interpolateOranges(logScale(d))
+                    )
+
+                    d3.select("svg")
+                        .selectAll("path")
+                        .data(json.features)
+                        .transition()
+                        .duration(1000)
+                        .style("fill", function (d) {
+                            return color(d.properties.deaths);
+                        })
+
+                    d3.select("svg")
+                        .selectAll("#annotation")
+                        .remove();
+
+                    createAnnotationBox(100, 100, 10, 10, 100, 100, 1302, 381, 130, 130, "Most Deadly State", "New York state has the highest number of ", "deaths caused by COVID 19 cases.");
+                    createAnnotationBox(-400, 100, 10, 10, -100, 100, 580, 481, -380, 130, "Second Most Deadly State", "California state has the second highest ", "deaths caused by COVID 19 cases.");
+                } else if (selectedOption == "Confirm Case Heatmap") {  //Switch to confirm case heatmap
+                    lineChartData = totalConfirmedWithState;
+                    titleText = "Confirm Case Heatmap";
+                    chartTitleText = "Confirm Case Line Chart";
+                    circleColor = "red";
+                    var logScale = d3.scaleLog()
+                        .domain([
+                            d3.min(json.features, d => d.properties.value),
+                            d3.max(json.features, d => d.properties.value)
+                        ]);
+
+                    var color = d3.scaleSequential(
+                        (d) => d3.interpolateReds(logScale(d))
+                    )
+
+                    d3.select("svg")
+                        .selectAll("path")
+                        .data(json.features)
+                        .transition()
+                        .duration(1000)
+                        .style("fill", function (d) {
+                            return color(d.properties.value);
+                        })
+
+                    d3.select("svg")
+                        .selectAll("#annotation")
+                        .remove();
+                    createAnnotationBox(100, 100, 10, 10, 100, 100, 1302, 381, 130, 130, "Most Infected State", "New York state has the highest number of ", "confirmed COVID 19 cases.");
+                    createAnnotationBox(-400, 100, 10, 10, -100, 100, 580, 481, -380, 130, "Second Most Infected State", "California state has the second highest ", "number of confirmed COVID 19 cases.");
+                    createAnnotationBox(-400, 100, 10, 10, -100, 100, 620, 700, -380, 130, "Least Infected State", "Alaska state has the lowest ", "number of confirmed COVID 19 cases.");
+                } else if (selectedOption == "Test Case Heatmap") { //Switch to test case heatmap
+                    lineChartData = totalTestsWithState;
+                    titleText = "Test Case Heatmap";
+                    chartTitleText = "Test Case Line Chart";
+                    circleColor = "green";
+                    var logScale = d3.scaleLog()
+                        .domain([
+                            d3.min(json.features, d => d.properties.tests),
+                            d3.max(json.features, d => d.properties.tests)
+                        ]);
+
+                    var color = d3.scaleSequential(
+                        (d) => d3.interpolateGreens(logScale(d))
+                    )
+
+                    d3.select("svg")
+                        .selectAll("path")
+                        .data(json.features)
+                        .transition()
+                        .duration(1000)
+                        .style("fill", function (d) {
+                            return color(d.properties.tests);
+                        })
+
+                    d3.select("svg")
+                        .selectAll("#annotation")
+                        .remove();
+                    createAnnotationBox(-400, 100, 10, 10, -100, 100, 580, 481, -380, 130, "Most Tested State", "California state has the highest number of ", "tested COVID 19 cases.");
+                    createAnnotationBox(100, 100, 10, 10, 100, 100, 1302, 381, 130, 130, "Second Most Tested State", "New York state has the second highest ", "number of tested COVID 19 cases.");
+                    createAnnotationBox(100, -200, 10, 10, 100, -100, 800, 381, 130, -180, "Least Tested State", "Wyoming state has the least ", "number of tested COVID 19 cases.");
+                }
+
+                // update title if any updates on the selections
+                d3.select("#title")
+                    .text(titleText);
+            });
+    }
+
+    // Main function for creating customized annotation box.
+    function createAnnotationBox(rx, ry, x1, y1, x2, y2, gx, gy, tx, ty, textTitle, text1, text2) {
+        var annotationG = d3.select("svg")
+            .append("g")
+            .attr("id", "annotation")
+            .attr("opacity", 0)
+            .style("pointer-events", "none")
+            .attr("transform", "translate(" + gx + "," + gy + ")");
+
+        annotationG.append("circle")
+            .attr("cx", 10)
+            .attr("cy", 10)
+            .attr("r", 5)
+            .style("fill", "yellow")
+            .style("stroke", "black");
+        annotationG.append("line")
+            .style("stroke", "black")
+            .attr("x1", x1)
+            .attr("y1", y1)
+            .attr("x2", x2)
+            .attr("y2", y2);
+
+        var rectG = annotationG.append("g");
+        rectG.append("rect")
+            .attr("x", rx)
+            .attr("y", ry)
+            .attr("width", 300)
+            .attr("height", 100)
+            .style("stroke", "black")
+            .style("fill", "yellow")
+            .style("opacity", 0.5);
+        rectG.append("text")
+            .attr("transform", "translate(" + tx + "," + ty + ")")
+            .attr("color", "black")
+            .style("font-size", 15)
+            .style("font-weight", "bold")
+            .text(textTitle);
+        rectG.append("text")
+            .attr("transform", "translate(" + tx + "," + (ty + 20) + ")")
+            .attr("color", "black")
+            .style("font-size", 15)
+            .text(text1);
+        rectG.append("text")
+            .attr("transform", "translate(" + tx + "," + (ty + 40) + ")")
+            .attr("color", "black")
+            .style("font-size", 15)
+            .text(text2);
+
+        annotationG.transition()
+            .duration(400)
+            .style("opacity", 1);
+    }
+
+    //Main function for loading first page of the heatmaps
+    function loadFirstPage(width, height, totalConfirmedWithState, totalDeathsWithState, totalTestsWithState, svg, date, margin, json) {
+
+        // prepare geoJson map
+        var projection = d3.geoAlbersUsa()
+            .translate([width / 2, height / 2])
+            .scale([1200]);
+
+        var path = d3.geoPath(projection);
+
+        //prepare necessary data and save it to geo json dataset
+        for (var i = 0; i < totalConfirmedWithState.length; i++) {
+            var stateName = totalConfirmedWithState[i].Province_State;
+            var totalConfirmed = parseInt(totalConfirmedWithState[i].Total);
+            for (var j = 0; j < json.features.length; j++) {
+                var geoJsonState = json.features[j].properties.name;
+                if (stateName == geoJsonState) {
+                    json.features[j].properties.value = totalConfirmed;
+                    break;
+                }
+            }
+        }
+
+        //prepare necessary data and save it to geo json dataset
+        for (var i = 0; i < totalDeathsWithState.length; i++) {
+            var stateName = totalDeathsWithState[i].Province_State;
+            var totalDeath = parseInt(totalDeathsWithState[i].Total);
+            for (var j = 0; j < json.features.length; j++) {
+                var geoJsonState = json.features[j].properties.name;
+                if (stateName == geoJsonState) {
+                    json.features[j].properties.deaths = totalDeath;
+                    break;
+                }
+            }
+        }
+
+        //prepare necessary data and save it to geo json dataset
+        for (var i = 0; i < totalTestsWithState.length; i++) {
+            var stateName = totalTestsWithState[i].Province_State;
+            var totalTests = parseInt(totalTestsWithState[i].Total);
+            for (var j = 0; j < json.features.length; j++) {
+                var geoJsonState = json.features[j].properties.name;
+                if (stateName == geoJsonState) {
+                    json.features[j].properties.tests = totalTests;
+                    break;
+                }
+            }
+        }
+
+        //prepare log scale for heat map colors
+        var logScale = d3.scaleLog()
+            .domain([
+                d3.min(json.features, d => d.properties.value),
+                d3.max(json.features, d => d.properties.value)
+            ]);
+
+        //prepare heat map colors
+        var color = d3.scaleSequential(
+            (d) => d3.interpolateReds(logScale(d))
+        )
+
+        d3.select("#tooltip")
+            .select("#testNumP")
+            .style("display", null);
+
+        d3.select("#selectDiv")
+            .classed("hidden", false);
+
+        d3.select("#closeDiv")
+            .classed("hidden", true);
+
+        d3.select("#title")
+            .text("Confirm Case Heatmap")
+            .style("text-align", "center");
+
+        // load and display geo json heat map with colors
+        svg.selectAll("path")
+            .data(json.features)
+            .enter()
+            .append("path")
+            .attr("d", path)
+            .style("fill", function (d) {
+                return color(d.properties.value);
+            })
+            .style("stroke", "black");
+
+        var centroids = json.features.map(function (feature) {
+            return { centroid: path.centroid(feature), name: feature.properties.name };
+        });
+
+        //add state name on the map
+        svg.selectAll(".centroid")
+            .data(centroids)
+            .enter()
+            .append("text")
+            .attr("class", "centroid")
+            .attr("x", function (d) { return d.centroid[0] - 30; })
+            .attr("y", function (d) { return d.centroid[1]; })
+            .text(function (d) { return d.name })
+            .style("pointer-events", "none")
+            .style("font-size", 12);
+
+        //Enable/Disable popup dialog.
+        if (parseInt(d3.select("#popUpDialog")
+            .select("#message")
+            .attr("step")) >= 5) {
+            enableMapListeners(width, height, date, margin, totalConfirmedWithState, totalDeathsWithState, totalTestsWithState, json);
+        } else {
+            d3.select("svg")
+                .style("filter", "blur(4px)");
+            d3.select("#popUpDialog")
+                .classed("hidden", false)
+                .style("padding-left", 100 + "px")
+                .style("padding-right", 100 + "px")
+                .style("text-align", "center")
+                .select("#message")
+                .text("Coronavirus is a family of viruses that can cause illness, which can vary from common cold and cough to sometimes more severe disease. " +
+                    "Middle East Respiratory Syndrome (MERS-CoV) and Severe Acute Respiratory Syndrome (SARS-CoV) were such severe cases with the world already has faced. " +
+                    "SARS-CoV-2 (n-coronavirus) is the new virus of the coronavirus family, which first discovered in 2019, which has not been identified in humans before. " +
+                    "It is a contiguous virus which started from Wuhan in December 2019. Which later declared as Pandemic by WHO due to high rate spreads throughout the world. " +
+                    "Currently (on the date 10 June 2020), this leads to a total of 500K+ Deaths across the globe. Pandemic is spreading all over the world; it becomes more important to understand about this spread. " +
+                    "This narrative visualization is an effort to analyze the cumulative data of confirmed, deaths, and recovered cases over time. " +
+                    "In this narrative visualization, the main focus is to analyze the spread trend of this virus all over the world. Credit: https://www.kaggle.com/tarunkr/covid-19-case-study-analysis-viz-comparisons. " +
+                    "Datasets Credits: https://coronavirus.jhu.edu/testing/states-comparison, https://github.com/CSSEGISandData/COVID-19/tree/master/csse_covid_19_data/csse_covid_19_time_series.")
+                .style("text-align", "center")
+                .style("font-size", 20 + "px")
+                .attr("step", 1);
+        }
+
+        // Add triggers for the popup dialogs.
+        d3.select("#popUpDialog")
+            .select("button")
+            .on("mouseover", function (d) {
+                d3.select(this)
+                    .style("cursor", "pointer");
+            })
+            .on("mouseout", function (d) {
+                d3.select(this)
+                    .style("cursor", "default");
+            })
+            .on("click", function (d) {
+                //Below are the logic for switching dialogs...
+                var step = parseInt(d3.select("#popUpDialog")
+                    .select("#message")
+                    .attr("step"));
+
+                d3.select("#popUpDialog")
+                    .select("#message")
+                    .attr("step", step + 1);
+
+                if ((step + 1) == 2) {
+                    d3.select("svg")
+                        .style("filter", null);
+
+                    d3.select("#popUpDialog")
+                        .style("left", (margin.left - 90) + "px")
+                        .style("top", margin.top - 30 + "px")
+                        .style("width", 500 + "px")
+                        .style("padding-left", 20 + "px")
+                        .style("padding-right", 20 + "px")
+                        .select("#message")
+                        .text("After explosion of the COVID 19, people are often curious about how virus is affecting our life in the U.S. " +
+                            "Map is going to give us direct intuitive of the spreading, test performed and deaths. Please switch below selection box to view heatmaps.");
+                } else if ((step + 1) == 3) {
+                    d3.select("#popUpDialog")
+                        .style("left", (margin.left + width / 2 - 200) + "px")
+                        .style("top", (margin.top + 180) + "px")
+                        .style("width", 350 + "px")
+                        .style("padding-left", 20 + "px")
+                        .style("padding-right", 20 + "px")
+                        .select("#message")
+                        .text("Alright, we can see the map now. What is the exact numbers in my state? Can we know the total confirmed, tested and deaths numbers?." +
+                            "Please hover mouse on the below state territories to see details.");
+
+                    d3.select("svg")
+                        .selectAll("path")
+                        .on("mouseover", function (d) {
+
+                            d3.select("#tooltip")
+                                .select("#state")
+                                .text(d.properties.name);
+
+                            d3.select("#tooltip")
+                                .select("#valueTitle")
+                                .text("Total Confirmed Cases: ");
+
+                            d3.select("#tooltip")
+                                .select("#dateP")
+                                .style("display", "none");
+
+                            d3.select("#tooltip")
+                                .select("#value")
+                                .text(d.properties.value);
+
+                            d3.select("#tooltip")
+                                .select("#death")
+                                .text(d.properties.deaths);
+
+                            d3.select("#tooltip")
+                                .select("#test")
+                                .text(d.properties.tests);
+
+                            d3.select("#tooltip")
+                                .classed("hidden", false);
+
+                            d3.select("svg")
+                                .style("cursor", "pointer");
+
+                        })
+                        .on("mousemove", function (d) {
+
+                            d3.select("#tooltip")
+                                .style("left", d3.event.pageX + "px")
+                                .style("top", d3.event.pageY + 20 + "px");
+
+                        })
+                        .on("mouseout", function (d) {
+
+                            d3.select("#tooltip")
+                                .classed("hidden", true);
+
+                            d3.select("svg")
+                                .style("cursor", "default");
+
+                        });
+
+                } else if ((step + 1) == 4) {
+                    d3.select("#popUpDialog")
+                        .style("left", (margin.left + width / 2 - 200) + "px")
+                        .style("top", (margin.top + 180) + "px")
+                        .style("width", 350 + "px")
+                        .style("padding-left", 20 + "px")
+                        .style("padding-right", 20 + "px")
+                        .select("#message")
+                        .text("Great! We can see huge numbers on each state. What are the trends of tested, death and confirmed numbers on each of the states?" +
+                            "Please click on the below state territories to see trends after clicking 'Next >>'.");
+                } else {
+                    d3.select("#popUpDialog")
+                        .classed("hidden", true);
+                    enableMapListeners(width, height, date, margin, totalConfirmedWithState, totalDeathsWithState, totalTestsWithState, json);
+                }
+            });
+
+        // Prepare annotation boxes..
+        createAnnotationBox(100, 100, 10, 10, 100, 100, 1302, 381, 130, 130, "Most Infected State", "New York state has the highest number of ", "confirmed COVID 19 cases.");
+        createAnnotationBox(-400, 100, 10, 10, -100, 100, 580, 481, -380, 130, "Second Most Infected State", "California state has the second highest ", "number of confirmed COVID 19 cases.");
+        createAnnotationBox(-400, 100, 10, 10, -100, 100, 620, 700, -380, 130, "Least Infected State", "Alaska state has the lowest ", "number of confirmed COVID 19 cases.");
+    }
+
+    //Main function for DOM body on load call back
+    async function init() {
+
+        //Prepare window sizes...
+        var margin = { top: 10, right: 10, bottom: 50, left: 70 };
+        var width = 1920 - margin.left - margin.right;
+        var height = 1080 - margin.top - margin.bottom;
+
+        //Add selection box element...
+        var selectionGroup = ["Confirm Case Heatmap", "Death Case Heatmap", "Test Case Heatmap"];
+        d3.select("#selectButton")
+            .selectAll("option")
+            .data(selectionGroup)
+            .enter()
+            .append("option")
+            .text(function (d) { return d; })
+            .attr("value", function (d) { return d; });
+
+        d3.select("#selectButton")
+            .style("display", null);
+
+        var svg = d3.select("body")
+            .append("svg")
+            .attr("width", width + margin.left + margin.right)
+            .attr("height", height + margin.top + margin.bottom)
+            .append("g")
+            .attr("transform", "translate(" + margin.left + "," + margin.top + ")");
+
+        //Asynconously load csv datasets..
+        const data = await d3.csv("time_series_covid19_confirmed_US.csv");
+        const data_state = await d3.csv("time_series_covid19_confirmed_by_state_US.csv"); //derive from time_series_covid19_confirmed_US.csv
+        const data_death_state = await d3.csv("time_series_covid19_deaths_by_state_US.csv"); //derive from time_series_covid19_deaths_US.csv
+        const data_series_time_tests_US = await d3.csv("time_series_test_results_by_state_US.csv"); //derive from daily.csv
+        const data_total_tests_US = await d3.csv("total_test_results_by_state_US.csv"); //derive from daily.csv
+        const json = await d3.json("us-states.json"); //get from https://github.com/scotthmurray/d3-book/tree/master/chapter_14
+
+        var totalConfirmedWithCountyState = [];
+        for (var r = 0; r < data.length; r++) {
+            var confirmCase = { county: data[r].Admin2, state: data[r].Province_State, value: parseInt(data[r].Total) };
+            totalConfirmedWithCountyState.push(confirmCase);
+        }
+
+        var parse = d3.timeParse("%m/%d/%Y");
+        var date = [];
+        for (var c = 0; c < Object.keys(data_state[0]).length; c++) {
+            var key = Object.keys(data_state[0])[c];
+            var parsed = parse(key);
+            if (parsed) {
+                date.push(parsed);
+            }
+        }
+
+        var totalConfirmedWithState = [];
+        for (var r = 0; r < data_state.length; r++) {
+            var confirmCase = { Province_State: data_state[r].Province_State, Total: parseInt(data_state[r].Total) };
+            var dateByVal = [];
+            for (var c = 0; c < Object.keys(data_state[r]).length; c++) {
+                var key = Object.keys(data_state[r])[c];
+                if (key == "Province_State" || key == "Total") {
+                } else {
+                    dateByVal.push({ date: parse(key), value: parseInt(data_state[r][key]) });
+                }
+            }
+            confirmCase["dateList"] = dateByVal;
+            totalConfirmedWithState.push(confirmCase);
+        }
+
+        var totalDeathsWithState = [];
+        for (var r = 0; r < data_death_state.length; r++) {
+            var deathCase = { Province_State: data_death_state[r].Province_State, Total: parseInt(data_death_state[r].Total) };
+            var dateByVal = [];
+            for (var c = 0; c < Object.keys(data_death_state[r]).length; c++) {
+                var key = Object.keys(data_death_state[r])[c];
+                if (key == "Province_State" || key == "Total") {
+                } else {
+                    dateByVal.push({ date: parse(key), value: parseInt(data_death_state[r][key]) });
+                }
+            }
+            deathCase["dateList"] = dateByVal;
+            totalDeathsWithState.push(deathCase);
+        }
+
+        var totalTestsWithState = [];
+        for (var r = 0; r < data_series_time_tests_US.length; r++) {
+            var stateName = data_series_time_tests_US[r].state;
+            var testCase = { Province_State: stateName };
+            var dateByVal = [];
+            for (var r2 = r; r2 < data_series_time_tests_US.length; r2++) {
+                if (stateName == data_series_time_tests_US[r2].state) {
+                    dateByVal.push({ date: parse(data_series_time_tests_US[r2].date), value: parseInt(data_series_time_tests_US[r2].totalTestResultsIncrease) });
+                    if (r2 == (data_series_time_tests_US.length - 1)) {
+                        r = r2;
+                    }
+                } else {
+                    r = r2;
+                    break;
+                }
+            }
+            for (var r3 = 0; r3 < data_total_tests_US.length; r3++) {
+                if (stateName == data_total_tests_US[r3].Province_State) {
+                    testCase["Total"] = parseInt(data_total_tests_US[r3].Total);
+                    break;
+                }
+            }
+            testCase["dateList"] = dateByVal;
+            totalTestsWithState.push(testCase);
+        }
+
+        //load first page..
+        loadFirstPage(width, height, totalConfirmedWithState, totalDeathsWithState, totalTestsWithState, svg, date, margin, json);
+    }
+
+    //Main function to prepare second page...
+    function loadSecondPage(width, height, date, lineChartData, margin, circleColor, chartTitleText, select_state) {
+        d3.select("#selectDiv")
+            .classed("hidden", true);
+
+        d3.select("#tooltip")
+            .classed("hidden", true);
+
+        d3.select("#closeDiv")
+            .classed("hidden", false)
+            .style("float", "right")
+            .select("button")
+            .style("font-size", 30 + "px")
+            .on("click", function (d) {
+                d3.select("#closeDiv")
+                    .classed("hidden", true);
+
+                d3.select("svg")
+                    .transition()
+                    .duration(100)
+                    .on("end", function (d) {
+                        d3.select("#tooltip")
+                            .classed("hidden", true);
+                    })
+                    .transition()
+                    .duration(500)
+                    .style("opacity", 0)
+                    .remove()
+                    .on("end", function (d) {
+                        d3.select("svg")
+                            .style("cursor", "default");
+                        d3.select("#tooltip")
+                            .select("#deathNumP")
+                            .style("display", null);
+                        d3.select("#selectButton")
+                            .property("value", "Confirm Case Heatmap");
+                        init();
+                    });
+            });
+
+        d3.select("body")
+            .append("svg")
+            .attr("width", width + margin.left + margin.right)
+            .attr("height", height + margin.top + margin.bottom)
+            .append("g")
+            .attr("transform", "translate(" + margin.left + "," + margin.top + ")");
+
+        d3.select("#selectButton")
+            .style("display", "none");
+
+        var datum = lineChartData.filter(function (d) { return d.Province_State == select_state })[0].dateList;
+        var x = d3.scaleTime()
+            .domain([
+                d3.min(datum, function (d) { return d.date; }),
+                d3.max(datum, function (d) { return d.date; })
+            ])
+            .range([0, width]);
+
+        var y = d3.scaleLinear()
+            .domain([
+                0,
+                d3.max(datum, function (d) { return d.value; })
+            ])
+            .range([height, 0]);
+
+        var line = d3.line()
+            .curve(d3.curveMonotoneX)
+            .x(function (d) { return x(d.date); })
+            .y(function (d) { return y(d.value); });
+
+        var radius = 8;
+        d3.select("g")
+            .selectAll("circle")
+            .data(datum)
+            .enter()
+            .append("circle")
+            .attr("cx", function (d) { return x(d.date); })
+            .attr("cy", function (d) { return y(d.value); })
+            .attr("r", radius)
+            .attr("fill", circleColor);
+
+        d3.select("g")
+            .append("path")
+            .datum(datum)
+            .attr("class", "line")
+            .attr("d", line)
+            .attr("fill", "none")
+            .attr("stroke", "steelBlue");
+
+        d3.select("g")
+            .selectAll("circle")
+            .on("mouseover", function (d) {
+                d3.select("#tooltip")
+                    .select("#state")
+                    .text(select_state);
+
+                d3.select("#tooltip")
+                    .select("#valueTitle")
+                    .text("Cases: ");
+
+                d3.select("#tooltip")
+                    .select("#value")
+                    .text(d.value);
+
+                d3.select("#tooltip")
+                    .select("#deathNumP")
+                    .style("display", "none");
+
+                d3.select("#tooltip")
+                    .select("#testNumP")
+                    .style("display", "none");
+
+                d3.select("#tooltip")
+                    .select("#dateP")
+                    .style("display", null);
+
+                d3.select("#tooltip")
+                    .select("#date")
+                    .text(d3.timeFormat("%m/%d/%Y")(d.date));
+
+                d3.select("#tooltip")
+                    .classed("hidden", false);
+
+                d3.select("svg")
+                    .style("cursor", "pointer");
+
+                d3.select(this).attr("r", radius + 2);
+            })
+            .on("mousemove", function (d) {
+
+                d3.select("#tooltip")
+                    .style("left", d3.event.pageX - 95 + "px")
+                    .style("top", d3.event.pageY - 150 + "px");
+
+            })
+            .on("mouseout", function (d) {
+
+                d3.select("#tooltip")
+                    .classed("hidden", true);
+
+                d3.select("svg")
+                    .style("cursor", "default");
+
+                d3.select(this).attr("r", radius);
+
+            });
+
+        d3.select("svg").append("g").attr("transform", "translate(" + margin.left + "," + margin.top + ")").call(d3.axisLeft(y));
+        d3.select("svg").append("g").attr("transform", "translate(" + margin.left + "," + (height + margin.top) + ")").call(d3.axisBottom(x).tickFormat(d3.timeFormat("%m/%d/%Y")));
+        d3.select("svg").append("g").attr("transform", "translate(" + (margin.left + width / 2) + "," + (height + margin.top + 40) + ")").append("text").style("text-anchor", "middle").text("Date of Case Report");
+        d3.select("svg").append("g").attr("transform", "translate(" + (margin.left - 40) + "," + (margin.top + height / 2) + ")rotate(-90)").append("text").style("text-anchor", "middle").text("Number of Cases");
+
+        var maxDatum = datum.filter(function (d) { return d.value == d3.max(datum, function (d) { return d.value; }); })[0];
+        var maxX = x(maxDatum.date);
+        var maxY = y(maxDatum.value);
+        if (chartTitleText == "Confirm Case Line Chart") {
+            createAnnotationBox(-400, -200, 10, 10, -100, -100, 720, 981, -380, -170, "Virus Explosion Point", "Averaged explosion point of ", "COVID 19 infections.");
+            createAnnotationBox(-400, 30, 10, 10, -100, 30, maxX + margin.left - 10, maxY, -380, 50, "Highest Confirmed Point", "This is the highest point of ", "COVID 19 confirmed.");
+        } else if (chartTitleText == "Death Case Line Chart") {
+            createAnnotationBox(-400, -200, 10, 10, -100, -100, 720, 981, -380, -170, "Casualty Explosion Point", "Averaged explosion point of ", "COVID 19 Casualties.");
+            createAnnotationBox(-400, 30, 10, 10, -100, 30, maxX + margin.left - 10, maxY, -380, 50, "Most Deadly Day", "This is the most deadly day of ", "COVID 19 confirmed.");
+        } else if (chartTitleText == "Test Case Line Chart") {
+            createAnnotationBox(-400, 100, 10, 10, -100, 100, maxX + margin.left - 10, maxY, -380, 120, "Highest Test Point", "This is the highest test point of ", "COVID 19 performed.");
+        }
+
+        if (parseInt(d3.select("#popUpDialog")
+            .select("#message")
+            .attr("step")) <= 5) {
+            d3.select("#popUpDialog")
+                .classed("hidden", false)
+                .style("left", (margin.left + width / 2 - 200) + "px")
+                .style("top", (margin.top + 180) + "px")
+                .style("width", 350 + "px")
+                .style("padding-left", 20 + "px")
+                .style("padding-right", 20 + "px")
+                .select("#message")
+                .text("Awesome! We saw the line chart now. Please simply hover mouse on the data points to see more details.");
+        }
+    }
+</script>

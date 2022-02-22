@@ -1,0 +1,39 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+    
+        {
+            "name": "Launch 8-1-2",
+            "type": "chrome",
+            "request": "launch",
+            "file": "${workspaceFolder}/8-1-2_D3_Quiz.html"
+        },
+        {
+            "name": "Launch 8-1-4",
+            "type": "chrome",
+            "request": "launch",
+            "file": "${workspaceFolder}/8-1-4_D3_Quiz.html"
+        },
+        {
+            "name": "Launch 8-1-6",
+            "type": "chrome",
+            "request": "launch",
+            "file": "${workspaceFolder}/8-1-6_D3_Quiz.html"
+        },
+        {
+            "name": "Launch 8-2-6",
+            "type": "chrome",
+            "request": "launch",
+            "file": "${workspaceFolder}/8-2-6_D3_Quiz.html"
+        },
+        {
+            "name": "Launch 8-3-4",
+            "type": "chrome",
+            "request": "launch",
+            "file": "${workspaceFolder}/8-3-4_D3_Graphs.html"
+        }
+    ]
+}
